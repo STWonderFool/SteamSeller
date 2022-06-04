@@ -2,13 +2,11 @@ from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QCombo
                             QTextBrowser, QFileDialog
 from pathlib import Path
 from PyQt5 import QtGui, Qt
-from PyQt5.QtCore import QThread, pyqtSignal, QUrl
+from PyQt5.QtCore import QThread, pyqtSignal
 import sys
-from time import sleep, time
 from json import load, dump
-from threading import Thread
 from traceback import format_exc
-from requests import Session, utils, get, post
+from requests import Session, utils, get
 from steampy.login import LoginExecutor
 from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import CaptchaRequired, InvalidCredentials
@@ -174,34 +172,44 @@ class Seller(QThread):
             self.steam_id = str(maFile['Session']['SteamID'])
 
         game_ids = {'cs': '730', 'dota': '570', 'rust': '252490'}
-        self.game_id = game_ids[game.lower()]
+        self.game = game.lower()
+        self.game_id = game_ids[self.game]
 
         # ItemsID
         with open('All Items ID.json') as file:
             self.all_items_id = load(file)
-            self.items_id = self.all_items_id[game.lower()]
+            self.items_id = self.all_items_id[self.game]
 
         self.session = Session()
 
     def run(self):
-        if not self.login_to_account():
-            return
-        inventory = self.get_my_inventory()
-        if not inventory:
-            return
+        try:
+            if not self.login_to_account():
+                self.finish.emit()
+                return
+            inventory = self.get_my_inventory()
+            if not inventory:
+                self.finish.emit()
+                return
 
-        for item_name in sorted(inventory):
-            sell_price = self.get_sell_price(item_name)
-            if sell_price is None:
-                continue
-            sell_price = str(round((sell_price * 0.8695653) * 100))
-            for asset_id in inventory[item_name]:
-                self.sell_in_steam(item_name, asset_id, sell_price)
+            for item_name in sorted(inventory):
+                sell_price = self.get_sell_price(item_name)
+                if sell_price is None:
+                    continue
+                for asset_id in inventory[item_name]:
+                    self.sell_in_steam(item_name, asset_id, sell_price)
+        except:
+            print(format_exc())
+
+        with open('All Items ID.json', 'w') as file:
+            self.all_items_id[self.game] = self.items_id
+            dump(self.all_items_id, file)
 
         self.progress.emit(message('magic', 'Finish!'))
         self.finish.emit()
 
     def sell_in_steam(self, item_name, asset_id, sell_price):
+        pure_sell_price = str(round((sell_price * 0.8695653) * 100))
         url = 'https://steamcommunity.com/market/sellitem/'
         headers = {'Referer': f'https://steamcommunity.com/id/{self.steam_id}/inventory'}
         data = {
@@ -210,7 +218,7 @@ class Seller(QThread):
             'contextid': '2',
             'assetid': asset_id,
             'amount': '1',
-            'price': sell_price
+            'price': pure_sell_price
         }
         try:
             response = self.session.post(url, data=data, headers=headers)
@@ -272,6 +280,9 @@ class Seller(QThread):
                              f'{self.game_id}&market_hash_name=' + item_name
         try:
             history = self.session.get(url).json()['prices']
+            if not history:
+                self.progress.emit(message('error', 'Steam error'))
+                return None
         except:
             self.progress.emit(message('error', 'Steam error'))
             return None
@@ -307,7 +318,7 @@ class Seller(QThread):
 
         blacklist = []
         try:
-            with open('Blacklist.txt') as file:
+            with open('Blacklist.txt', encoding='utf-8') as file:
                 for i in file.readlines():
                     blacklist.append(i.split('\n')[0])
         except:
