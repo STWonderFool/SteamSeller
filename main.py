@@ -1,24 +1,25 @@
-from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout, QWidget,\
-                            QTextBrowser, QFileDialog
+import re
+import sys
+from datetime import datetime, timedelta
+from json import load, dump
 from pathlib import Path
+from statistics import median
+from traceback import format_exc
 from PyQt5 import QtGui, Qt
 from PyQt5.QtCore import QThread, pyqtSignal
-import sys
-from json import load, dump
-from traceback import format_exc
+from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout, QWidget, \
+    QTextBrowser, QFileDialog
 from requests import Session, utils, get
-from steampy.login import LoginExecutor
 from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import CaptchaRequired, InvalidCredentials
-from datetime import datetime, timedelta
-from statistics import median
-import re
+from steampy.login import LoginExecutor
 
 
 def message(type_of_message, text):
     colors = {'info': 'black', 'error': 'red', 'success': 'green', 'magic': 'fuchsia'}
     ready_text = f'<font color="{colors[type_of_message]}">{text}</font>'
     return ready_text
+
 
 class SteamSeller(QWidget):
     def __init__(self):
@@ -75,6 +76,9 @@ class SteamSeller(QWidget):
         self.game_box = QComboBox()
         self.game_box.addItems(['CS', 'Dota', 'Rust'])
         self.game_box.setFont(font)
+        self.currency_box = QComboBox()
+        self.currency_box.addItems(['RUB', 'USD', 'EUR'])
+        self.currency_box.setFont(font)
 
         # Layout
         layout = QGridLayout()
@@ -92,10 +96,11 @@ class SteamSeller(QWidget):
 
         layout.addWidget(self.choose_mafile_button, 2, 0, 1, 2)
         layout.addWidget(self.game_box, 2, 2, 1, 3)
-        layout.addWidget(self.save_button, 2, 5, 1, 1)
+        layout.addWidget(self.currency_box, 2, 5, 1, 1)
 
         layout.addWidget(self.maFile_label, 3, 0, 1, 1)
         layout.addWidget(self.start_button, 3, 2, 1, 3)
+        layout.addWidget(self.save_button, 3, 5, 1, 1)
 
         layout.addWidget(self.status, 4, 0, 1, 6)
         self.setLayout(layout)
@@ -114,8 +119,9 @@ class SteamSeller(QWidget):
             self.start_button.setStyleSheet('background-color: rgb(153,50,204)')
             self.status.setText(message('info', 'Starting..'))
             self.worker = Seller(self.login_line_edit.text().strip(), self.password_line_edit.text().strip(),
-                            self.price_per_days_line_edit.text().strip(), self.steam_coefficient_line_edit.text().strip(),
-                            self.maFile_path, self.game_box.currentText())
+                                 self.price_per_days_line_edit.text().strip(),
+                                 self.steam_coefficient_line_edit.text().strip(),
+                                 self.maFile_path, self.game_box.currentText(), self.currency_box.currentText())
             self.worker.progress.connect(lambda x: self.status.append(x))
             self.worker.finish.connect(self.stop_worker)
             self.worker.start()
@@ -136,7 +142,8 @@ class SteamSeller(QWidget):
             data = {'login': self.login_line_edit.text().strip(), 'password': self.password_line_edit.text().strip(),
                     'price_per_days': self.price_per_days_line_edit.text().strip(),
                     'steam_coefficient': self.steam_coefficient_line_edit.text().strip(),
-                    'maFile_path': self.maFile_path, 'game': self.game_box.currentText()}
+                    'maFile_path': self.maFile_path, 'game': self.game_box.currentText(),
+                    'currency': self.currency_box.currentText()}
             dump(data, file)
         self.status.append(message('success', 'User data saved!'))
 
@@ -151,20 +158,22 @@ class SteamSeller(QWidget):
                 self.maFile_path = data['maFile_path']
                 self.maFile_label.setText(Path(self.maFile_path).resolve().name)
                 self.game_box.setCurrentText(data['game'])
+                self.currency_box.setCurrentText(data['currency'])
                 self.status.append(message('success', 'User data loaded'))
         except:
             self.status.append(message('error', 'No user data'))
+
 
 class Seller(QThread):
     progress = pyqtSignal(str)
     finish = pyqtSignal()
 
-    def __init__(self, login, password, price_per_days, steam_coefficient, maFile_path, game):
+    def __init__(self, login, password, price_per_days, steam_coefficient, maFile_path, game, currency):
         super(Seller, self).__init__()
 
         # Requirements
-        self.login, self.password, self.price_per_days, self.steam_coefficient = login, password, \
-                                                        float(price_per_days), float(steam_coefficient)
+        self.login, self.password, self.price_per_days, self.steam_coefficient = \
+            login, password, float(price_per_days), float(steam_coefficient)
 
         with open(maFile_path) as file:
             maFile = load(file)
@@ -174,6 +183,9 @@ class Seller(QThread):
         game_ids = {'cs': '730', 'dota': '570', 'rust': '252490'}
         self.game = game.lower()
         self.game_id = game_ids[self.game]
+
+        currency_codes = {'RUB': '5', 'USD': '1', 'EUR': '3'}
+        self.currency_code = currency_codes[currency]
 
         # ItemsID
         with open('All Items ID.json') as file:
@@ -209,7 +221,7 @@ class Seller(QThread):
         self.finish.emit()
 
     def sell_in_steam(self, item_name, asset_id, sell_price):
-        pure_sell_price = str(round((sell_price * 0.8695653) * 100))
+        pure_sell_price = str(round((sell_price / 1.15) * 100))
         url = 'https://steamcommunity.com/market/sellitem/'
         headers = {'Referer': f'https://steamcommunity.com/id/{self.steam_id}/inventory'}
         data = {
@@ -226,7 +238,7 @@ class Seller(QThread):
                 self.progress.emit(message('error', response.json()))
             else:
                 self.confirmation_executor.confirm_sell_listing(asset_id)
-                self.progress.emit(message('info', f'{item_name} listed for {round(int(sell_price) / 100, 2)}'))
+                self.progress.emit(message('info', f'{item_name} listed for {round(sell_price, 2)}'))
         except:
             self.progress.emit(message('error', f'Error listing {item_name}'))
 
@@ -254,8 +266,8 @@ class Seller(QThread):
             if item_id is None:
                 return None
 
-        url = 'https://steamcommunity.com/market/itemordershistogram?country=RU&language=english&currency=5&' \
-              'item_nameid=' + item_id
+        url = f'https://steamcommunity.com/market/itemordershistogram?country=RU&language=english&currency=' \
+              f'{self.currency_code}&item_nameid=' + item_id
         try:
             sell_orders = get(url).json()['sell_order_graph']
         except:
@@ -269,15 +281,15 @@ class Seller(QThread):
         sell_price = None
         for i in sell_order_graph_prices:
             if i > median_price:
-                sell_price = i - 0.01
+                sell_price = i
                 break
         if sell_price is None:
             self.progress.emit(message('error', f'Cant get sell price of {item_name}'))
         return sell_price
 
     def get_median_price(self, item_name):
-        url = f'https://steamcommunity.com/market/pricehistory/?country=RU&currency=5&appid=' \
-                             f'{self.game_id}&market_hash_name=' + item_name
+        url = f'https://steamcommunity.com/market/pricehistory/?country=RU&currency={self.currency_code}&appid=' \
+              f'{self.game_id}&market_hash_name=' + item_name
         try:
             history = self.session.get(url).json()['prices']
             if not history:
@@ -298,7 +310,16 @@ class Seller(QThread):
         if not prices:
             self.progress.emit(message('error', f'No prices in {self.price_per_days} days'))
             return None
-        median_price = median(prices)
+
+        prices = sorted(prices, reverse=True)
+        upper_prices, counter = [], 0
+        for i in prices:
+            if counter > len(prices) * 0.3:
+                break
+            counter += 1
+            upper_prices.append(i)
+
+        median_price = median(upper_prices)
         return median_price * self.steam_coefficient
 
     def get_my_inventory(self):
