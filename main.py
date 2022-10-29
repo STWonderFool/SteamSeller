@@ -13,6 +13,7 @@ from requests import Session, utils, get
 from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import CaptchaRequired, InvalidCredentials
 from steampy.login import LoginExecutor
+from fake_useragent import UserAgent
 
 
 def message(type_of_message, text):
@@ -171,6 +172,8 @@ class Seller(QThread):
     def __init__(self, login, password, price_per_days, steam_coefficient, maFile_path, game, currency):
         super(Seller, self).__init__()
 
+        self.user_agent = UserAgent().random
+
         # Requirements
         self.login, self.password, self.price_per_days, self.steam_coefficient = \
             login, password, float(price_per_days), float(steam_coefficient)
@@ -268,8 +271,14 @@ class Seller(QThread):
 
         url = f'https://steamcommunity.com/market/itemordershistogram?country=RU&language=english&currency=' \
               f'{self.currency_code}&item_nameid=' + item_id
+
+        headers = {
+            'Referer': f'https://steamcommunity.com/market/listings/{self.game_id}/{item_name}',
+            'User-Agent': self.user_agent
+        }
+
         try:
-            sell_orders = get(url).json()['sell_order_graph']
+            sell_orders = self.session.get(url, headers=headers).json()['sell_order_graph']
         except:
             self.progress.emit(message('error', 'Error getting steam price'))
             return None
