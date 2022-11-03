@@ -335,7 +335,7 @@ class Seller(QThread):
         url = f'https://steamcommunity.com/inventory/{self.steam_id}/{self.game_id}/2?l=english&count=5000'
 
         try:
-            response = self.session.get(url)
+            response = get(url)
             if response.status_code != 200:
                 self.progress.emit(message('error', 'Steam is not responding'))
                 return False
