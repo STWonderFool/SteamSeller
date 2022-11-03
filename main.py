@@ -14,6 +14,7 @@ from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import CaptchaRequired, InvalidCredentials
 from steampy.login import LoginExecutor
 from fake_useragent import UserAgent
+from urllib.parse import quote
 
 
 def message(type_of_message, text):
@@ -273,7 +274,7 @@ class Seller(QThread):
               f'{self.currency_code}&item_nameid=' + item_id
 
         headers = {
-            'Referer': f'https://steamcommunity.com/market/listings/{self.game_id}/{item_name}',
+            'Referer': quote(f'https://steamcommunity.com/market/listings/{self.game_id}/{item_name}'),
             'User-Agent': self.user_agent
         }
 
