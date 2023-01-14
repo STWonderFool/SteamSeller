@@ -251,9 +251,9 @@ class Seller(QThread):
         try:
             response = self.session.post(url, data=data, headers=headers)
             if not response.json()['success']:
+                self.progress.emit(message('error', response.json()))
                 if 'The price entered plus the sum of outstanding listings' in response.text:
                     return 'stop'
-                self.progress.emit(message('error', response.json()))
             else:
                 self.confirmation_executor.confirm_sell_listing(asset_id)
                 self.progress.emit(message('info', f'{item_name} listed for {round(sell_price, 2)}'))
