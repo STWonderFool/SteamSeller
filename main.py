@@ -215,12 +215,17 @@ class Seller(QThread):
                 self.finish.emit()
                 return
 
+            response = 0
             for item_name in sorted(inventory):
                 sell_price = self.get_sell_price(item_name)
                 if sell_price is None:
                     continue
                 for asset_id in inventory[item_name]:
-                    self.sell_in_steam(item_name, asset_id, sell_price)
+                    response = self.sell_in_steam(item_name, asset_id, sell_price)
+                    if response == 'stop':
+                        break
+                if response == 'stop':
+                    break
         except:
             print(format_exc())
 
@@ -246,6 +251,8 @@ class Seller(QThread):
         try:
             response = self.session.post(url, data=data, headers=headers)
             if not response.json()['success']:
+                if 'The price entered plus the sum of outstanding listings' in response.text:
+                    return 'stop'
                 self.progress.emit(message('error', response.json()))
             else:
                 self.confirmation_executor.confirm_sell_listing(asset_id)
