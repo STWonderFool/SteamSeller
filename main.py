@@ -3,8 +3,12 @@ import sys
 from datetime import datetime, timedelta
 from json import load, dump
 from pathlib import Path
+from random import randint
 from statistics import median
 from traceback import format_exc
+from urllib.parse import quote
+from threading import Thread
+
 from PyQt5 import QtGui, Qt
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout, QWidget, \
@@ -13,8 +17,6 @@ from requests import Session, utils, get
 from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import CaptchaRequired, InvalidCredentials
 from steampy.login import LoginExecutor
-from random import randint
-from urllib.parse import quote
 
 
 def get_user_agent_function():
@@ -255,8 +257,14 @@ class Seller(QThread):
                 if 'The price entered plus the sum of outstanding listings' in response.text:
                     return 'stop'
             else:
-                self.confirmation_executor.confirm_sell_listing(asset_id)
-                self.progress.emit(message('info', f'{item_name} listed for {round(sell_price, 2)}'))
+                Thread(target=self.confirm_listing, args=(item_name, sell_price, asset_id)).start()
+        except:
+            self.progress.emit(message('error', f'Error listing {item_name}'))
+
+    def confirm_listing(self, item_name, sell_price, asset_id):
+        try:
+            self.confirmation_executor.confirm_sell_listing(asset_id)
+            self.progress.emit(message('info', f'{item_name} listed for {round(sell_price, 2)}'))
         except:
             self.progress.emit(message('error', f'Error listing {item_name}'))
 
@@ -350,10 +358,6 @@ class Seller(QThread):
         url = f'https://steamcommunity.com/inventory/{self.steam_id}/{self.game_id}/2?l=english&count=5000'
 
         try:
-            response = get(url)
-            if response.status_code != 200:
-                self.progress.emit(message('error', 'Steam is not responding'))
-                return False
             inventory = self.session.get(url).json()
             assets = inventory['assets']
             descriptions = inventory['descriptions']
