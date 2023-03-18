@@ -7,7 +7,6 @@ from random import randint
 from statistics import median
 from traceback import format_exc
 from urllib.parse import quote
-from threading import Thread
 
 from PyQt5 import QtGui, Qt
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -25,11 +24,17 @@ def get_user_agent_function():
     useragent = user_agents_list[randint(1, 99)]
     return useragent
 
-
 def message(type_of_message, text):
     colors = {'info': 'black', 'error': 'red', 'success': 'green', 'magic': 'fuchsia'}
     ready_text = f'<font color="{colors[type_of_message]}">{text}</font>'
     return ready_text
+
+def check_session(login, cookies):
+    response = get('https://steamcommunity.com/', cookies=cookies)
+    if login in response.text:
+        return True
+    else:
+        return False
 
 
 class SteamSeller(QWidget):
@@ -208,8 +213,9 @@ class Seller(QThread):
         self.session = Session()
 
     def run(self):
+        need_to_confirm_counter = 0
         try:
-            if not self.login_to_account():
+            if not self.get_account_cookies():
                 self.finish.emit()
                 return
             inventory = self.get_my_inventory()
@@ -224,10 +230,20 @@ class Seller(QThread):
                     continue
                 for asset_id in inventory[item_name]:
                     response = self.sell_in_steam(item_name, asset_id, sell_price)
+                    need_to_confirm_counter += 1
+                    if need_to_confirm_counter >= 50:
+                        self.progress.emit(message('magic', 'Confriming listings..'))
+                        self.confirm_listings()
+                        need_to_confirm_counter = 0
+
                     if response == 'stop':
                         break
                 if response == 'stop':
                     break
+
+            self.progress.emit(message('magic', 'Confriming last listings..'))
+            self.confirm_listings()
+
         except:
             print(format_exc())
 
@@ -237,6 +253,12 @@ class Seller(QThread):
 
         self.progress.emit(message('magic', 'Finish!'))
         self.finish.emit()
+
+    def confirm_listings(self):
+        try:
+            self.confirmation_executor.allow_all_confirmations()
+        except:
+            self.progress.emit(message('error', 'Error in confirming listings'))
 
     def sell_in_steam(self, item_name, asset_id, sell_price):
         pure_sell_price = str(round((sell_price / 1.15) * 100))
@@ -253,23 +275,16 @@ class Seller(QThread):
         try:
             response = self.session.post(url, data=data, headers=headers)
             if not response.json()['success']:
-                self.progress.emit(message('error', response.json()))
                 if 'The price entered plus the sum of outstanding listings' in response.text:
                     return 'stop'
+                self.progress.emit(message('error', response.json()))
             else:
-                Thread(target=self.confirm_listing, args=(item_name, sell_price, asset_id)).start()
-        except:
-            self.progress.emit(message('error', f'Error listing {item_name}'))
-
-    def confirm_listing(self, item_name, sell_price, asset_id):
-        try:
-            self.confirmation_executor.confirm_sell_listing(asset_id)
-            self.progress.emit(message('info', f'{item_name} listed for {round(sell_price, 2)}'))
+                self.progress.emit(message('info', f'{item_name} listed for {round(sell_price, 2)}'))
         except:
             self.progress.emit(message('error', f'Error listing {item_name}'))
 
     def get_item_id(self, item_name):
-        url = f'https://steamcommunity.com/market/listings/{self.game_id}/' + item_name
+        url = f'https://steamcommunity.com/market/listings/{self.game_id}/' + quote(item_name)
         try:
             response = get(url)
             item_id = re.findall(r'Market_LoadOrderSpread\(\s(\d+)', response.text)[0]
@@ -321,7 +336,7 @@ class Seller(QThread):
 
     def get_median_price(self, item_name):
         url = f'https://steamcommunity.com/market/pricehistory/?country=RU&currency={self.currency_code}&appid=' \
-              f'{self.game_id}&market_hash_name=' + item_name
+              f'{self.game_id}&market_hash_name=' + quote(item_name)
         try:
             history = self.session.get(url).json()['prices']
             if not history:
@@ -358,6 +373,10 @@ class Seller(QThread):
         url = f'https://steamcommunity.com/inventory/{self.steam_id}/{self.game_id}/2?l=english&count=5000'
 
         try:
+            response = get(url)
+            if response.status_code != 200:
+                self.progress.emit(message('error', 'Steam is not responding'))
+                return False
             inventory = self.session.get(url).json()
             assets = inventory['assets']
             descriptions = inventory['descriptions']
@@ -410,11 +429,27 @@ class Seller(QThread):
             return False
 
         else:
-            self.steam_cookies = utils.dict_from_cookiejar(self.session.cookies)
-            self.session_id = self.steam_cookies['sessionid']
-            self.confirmation_executor = ConfirmationExecutor(self.identity_secret, self.steam_id, self.session)
             self.progress.emit(message('magic', 'Success login!'))
             return True
+
+    def get_account_cookies(self):
+        with open('Sessions.json') as file:
+            sessions_file = load(file)
+        if self.login in sessions_file and check_session(self.login, sessions_file[self.login]):
+            self.steam_cookies = sessions_file[self.login]
+            utils.add_dict_to_cookiejar(self.session.cookies, self.steam_cookies)
+            self.progress.emit(message('magic', 'Session is alive!'))
+        else:
+            if not self.login_to_account():
+                return False
+            with open('Sessions.json', 'w') as file:
+                self.steam_cookies = utils.dict_from_cookiejar(self.session.cookies)
+                sessions_file[self.login] = self.steam_cookies
+                dump(sessions_file, file)
+
+        self.session_id = self.steam_cookies['sessionid']
+        self.confirmation_executor = ConfirmationExecutor(self.identity_secret, self.steam_id, self.session)
+        return True
 
 
 app = QApplication(sys.argv)
