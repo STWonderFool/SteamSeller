@@ -380,7 +380,7 @@ class Seller(QThread):
 
     def confirm_listings(self):
         try:
-            self.confirmation_executor.allow_all_confirmations()
+            self.confirmation_executor.allow_only_market_listings()
         except:
             self.progress.emit(message('error', 'Error in confirming listings'))
 
@@ -498,10 +498,6 @@ class Seller(QThread):
         url = f'https://steamcommunity.com/inventory/{self.steam_id}/{self.game_id}/2?l=english&count=5000'
 
         try:
-            response = get(url)
-            if response.status_code != 200:
-                self.progress.emit(message('error', 'Steam inventory is not responding'))
-                return False
             inventory = self.session.get(url).json()
             assets = inventory['assets']
             descriptions = inventory['descriptions']
