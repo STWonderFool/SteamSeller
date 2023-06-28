@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 from datetime import datetime, timedelta
@@ -137,6 +138,16 @@ def check_session(login, cookies):
     else:
         return False
 
+def get_data_from_mafile(mafile_path):
+    with open(mafile_path) as file:
+        mafile = load(file)
+    try:
+        login, password, shared_secret, identity_secret, proxy, steam_id = mafile['account_name'],\
+            mafile['account_password'], mafile['shared_secret'], mafile['identity_secret'], mafile['proxy'], str(mafile['Session']['SteamID'])
+        return login, password, shared_secret, identity_secret, proxy, steam_id
+    except:
+        return 'error'
+
 
 class Streamer(QThread):
     progress = pyqtSignal(str)
@@ -169,12 +180,6 @@ class SteamSeller(QWidget):
 
         # Labels
         font.setPointSize(13)
-        self.login_label = QLabel('Login')
-        self.login_label.setAlignment(Qt.Qt.AlignCenter)
-        self.login_label.setFont(font)
-        self.password_label = QLabel('Password')
-        self.password_label.setAlignment(Qt.Qt.AlignCenter)
-        self.password_label.setFont(font)
         self.price_per_days_label = QLabel('Price for "N" days')
         self.price_per_days_label.setAlignment(Qt.Qt.AlignCenter)
         self.price_per_days_label.setFont(font)
@@ -183,12 +188,6 @@ class SteamSeller(QWidget):
         self.steam_coefficient_label.setFont(font)
 
         # LineEdits
-        self.login_line_edit = QLineEdit()
-        self.login_line_edit.setAlignment(Qt.Qt.AlignCenter)
-        self.login_line_edit.setFont(font)
-        self.password_line_edit = QLineEdit()
-        self.password_line_edit.setAlignment(Qt.Qt.AlignCenter)
-        self.password_line_edit.setFont(font)
         self.price_per_days_line_edit = QLineEdit()
         self.price_per_days_line_edit.setAlignment(Qt.Qt.AlignCenter)
         self.price_per_days_line_edit.setFont(font)
@@ -215,25 +214,20 @@ class SteamSeller(QWidget):
         layout = QGridLayout()
         layout.setSpacing(10)
 
-        layout.addWidget(self.login_label, 0, 0, 1, 1)
-        layout.addWidget(self.login_line_edit, 0, 1, 1, 2)
-        layout.addWidget(self.password_label, 1, 0, 1, 1)
-        layout.addWidget(self.password_line_edit, 1, 1, 1, 2)
+        layout.addWidget(self.price_per_days_label, 0, 0, 1, 1)
+        layout.addWidget(self.price_per_days_line_edit, 0, 1, 1, 1)
+        layout.addWidget(self.steam_coefficient_label, 0, 2, 1, 1)
+        layout.addWidget(self.steam_coefficient_line_edit, 0, 3, 1, 1)
 
-        layout.addWidget(self.price_per_days_label, 0, 3, 1, 2)
-        layout.addWidget(self.price_per_days_line_edit, 0, 5, 1, 1)
-        layout.addWidget(self.steam_coefficient_label, 1, 3, 1, 2)
-        layout.addWidget(self.steam_coefficient_line_edit, 1, 5, 1, 1)
+        layout.addWidget(self.choose_mafile_button, 1, 0, 1, 2)
+        layout.addWidget(self.game_box, 1, 2, 1, 1)
+        layout.addWidget(self.currency_box, 1, 3, 1, 1)
 
-        layout.addWidget(self.choose_mafile_button, 2, 0, 1, 2)
-        layout.addWidget(self.game_box, 2, 2, 1, 3)
-        layout.addWidget(self.currency_box, 2, 5, 1, 1)
+        layout.addWidget(self.maFile_label, 2, 0, 1, 1)
+        layout.addWidget(self.start_button, 2, 1, 1, 2)
+        layout.addWidget(self.save_button, 2, 3, 1, 1)
 
-        layout.addWidget(self.maFile_label, 3, 0, 1, 1)
-        layout.addWidget(self.start_button, 3, 2, 1, 3)
-        layout.addWidget(self.save_button, 3, 5, 1, 1)
-
-        layout.addWidget(self.status, 4, 0, 1, 6)
+        layout.addWidget(self.status, 3, 0, 1, 4)
         self.setLayout(layout)
 
         self.maFile_path = ''
@@ -256,13 +250,25 @@ class SteamSeller(QWidget):
 
     def start_function(self):
         if self.start_button.text() == 'Start':
+            response = get_data_from_mafile(self.maFile_path)
+            if response == 'error':
+                self.status.append(message('error', 'Bad mafile, need additional keys: account_password, proxy'))
+                return
+            login, password, shared_secret, identity_secret, proxy, steam_id = response
+            if proxy:
+                os.environ['https_proxy'] = proxy
+                self.status.append(message('success', f'Working with {proxy} proxy'))
+            else:
+                self.status.append(message('error', 'No proxy in mafile'))
+
             self.start_button.setText('Stop')
             self.start_button.setStyleSheet('background-color: rgb(153,50,204)')
             self.status.append(message('info', 'Starting..'))
-            self.worker = Seller(self.login_line_edit.text().strip(), self.password_line_edit.text().strip(),
-                                 self.price_per_days_line_edit.text().strip(),
-                                 self.steam_coefficient_line_edit.text().strip(),
-                                 self.maFile_path, self.game_box.currentText(), self.currency_box.currentText())
+            self.worker = Seller(login=login, password=password, shared_secret=shared_secret,
+                                 identity_secret=identity_secret, steam_id=steam_id,
+                                 price_per_days=self.price_per_days_line_edit.text().strip(),
+                                 steam_coefficient=self.steam_coefficient_line_edit.text().strip(),
+                                 game=self.game_box.currentText(), currency=self.currency_box.currentText())
             self.worker.progress.connect(lambda x: self.status.append(x))
             self.worker.finish.connect(self.stop_worker)
             self.worker.start()
@@ -280,8 +286,7 @@ class SteamSeller(QWidget):
 
     def save_function(self):
         with open('User_data.json', 'w') as file:
-            data = {'login': self.login_line_edit.text().strip(), 'password': self.password_line_edit.text().strip(),
-                    'price_per_days': self.price_per_days_line_edit.text().strip(),
+            data = {'price_per_days': self.price_per_days_line_edit.text().strip(),
                     'steam_coefficient': self.steam_coefficient_line_edit.text().strip(),
                     'maFile_path': self.maFile_path, 'game': self.game_box.currentText(),
                     'currency': self.currency_box.currentText()}
@@ -292,8 +297,6 @@ class SteamSeller(QWidget):
         try:
             with open('User_data.json') as file:
                 data = load(file)
-                self.login_line_edit.setText(data['login'])
-                self.password_line_edit.setText(data['password'])
                 self.price_per_days_line_edit.setText(data['price_per_days'])
                 self.steam_coefficient_line_edit.setText(data['steam_coefficient'])
                 self.maFile_path = data['maFile_path']
@@ -309,18 +312,16 @@ class Seller(QThread):
     progress = pyqtSignal(str)
     finish = pyqtSignal()
 
-    def __init__(self, login, password, price_per_days, steam_coefficient, maFile_path, game, currency):
+    def __init__(self, login, password, shared_secret, identity_secret, steam_id, price_per_days, steam_coefficient,
+                 game, currency):
         super(Seller, self).__init__()
         self.user_agent = get_user_agent_function()
 
-        # Requirements
-        self.login, self.password, self.price_per_days, self.steam_coefficient = \
-            login, password, float(price_per_days), float(steam_coefficient)
+        # Account data
+        self.login, self.password, self.shared_secret, self.identity_secret, self.steam_id = \
+            login, password, shared_secret, identity_secret, steam_id
 
-        with open(maFile_path) as file:
-            maFile = load(file)
-            self.shared_secret, self.identity_secret = maFile['shared_secret'], maFile['identity_secret']
-            self.steam_id = str(maFile['Session']['SteamID'])
+        self.price_per_days, self.steam_coefficient = float(price_per_days), float(steam_coefficient)
 
         game_ids = {'cs': '730', 'dota': '570', 'rust': '252490'}
         self.game = game.lower()
