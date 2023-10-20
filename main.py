@@ -205,7 +205,7 @@ class SteamSeller(QWidget):
         self.save_button = QPushButton('Save')
         self.save_button.setFont(font)
         self.game_box = QComboBox()
-        self.game_box.addItems(['CS', 'Dota', 'Rust'])
+        self.game_box.addItems(['CS', 'Dota', 'Rust', 'TF'])
         self.game_box.setFont(font)
         self.currency_box = QComboBox()
         self.currency_box.addItems(['RUB', 'USD', 'EUR'])
@@ -322,7 +322,7 @@ class Seller(QThread):
             self.shared_secret, self.identity_secret = maFile['shared_secret'], maFile['identity_secret']
             self.steam_id = str(maFile['Session']['SteamID'])
 
-        game_ids = {'cs': '730', 'dota': '570', 'rust': '252490'}
+        game_ids = {'cs': '730', 'dota': '570', 'rust': '252490', 'tf': '440'}
         self.game = game.lower()
         self.game_id = game_ids[self.game]
 
@@ -474,10 +474,10 @@ class Seller(QThread):
         prices = []
         for i in history[-1::-1]:
             date = datetime.strptime(i[0].split(':')[0], '%b %d %Y %H')
-            if datetime.now() - date > timedelta(self.price_per_days):
-                break
             for j in range(int(i[2])):
                 prices.append(i[1])
+            if datetime.now() - date > timedelta(self.price_per_days):
+                break
 
         if not prices:
             self.progress.emit(message('error', f'No prices in {self.price_per_days} days'))
