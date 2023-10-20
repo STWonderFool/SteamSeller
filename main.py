@@ -1,4 +1,4 @@
-import os
+import re
 import re
 import sys
 from datetime import datetime, timedelta
@@ -6,18 +6,17 @@ from json import load, dump
 from pathlib import Path
 from random import randint
 from statistics import median
+from time import sleep
 from traceback import format_exc
 from urllib.parse import quote
-from time import sleep
 
+from MySteam.login import LoginExecutor
 from PyQt5 import QtGui, Qt
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout, QWidget, \
     QTextBrowser, QFileDialog
 from requests import Session, utils, get
 from steampy.confirmation import ConfirmationExecutor
-from steampy.exceptions import CaptchaRequired, InvalidCredentials
-from steampy.login import LoginExecutor
 
 
 def get_user_agent_function():
@@ -536,23 +535,13 @@ class Seller(QThread):
     def login_to_account(self):
         self.progress.emit(message('magic', 'Logining to account..'))
         try:
-            LoginExecutor(self.login, self.password, self.shared_secret, self.session).login()
-
-        except InvalidCredentials:
-            self.progress.emit(message('error', 'Invalid login/password'))
-            return False
-
-        except CaptchaRequired:
-            self.progress.emit(message('error', 'Captcha required'))
-            return False
-
+            self.session = LoginExecutor(self.login, self.password, self.shared_secret).login()
         except:
             self.progress.emit(message('error', 'Unexpected error in login'))
             return False
 
-        else:
-            self.progress.emit(message('magic', 'Success login!'))
-            return True
+        self.progress.emit(message('magic', 'Success login!'))
+        return True
 
     def get_account_cookies(self):
         with open('Sessions.json') as file:
