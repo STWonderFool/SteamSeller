@@ -535,7 +535,7 @@ class Seller(QThread):
     def login_to_account(self):
         self.progress.emit(message('magic', 'Logining to account..'))
         try:
-            self.session = LoginExecutor(self.login, self.password, self.shared_secret).login()
+            self.session = LoginExecutor(self.login, self.password, self.shared_secret).run()
         except:
             self.progress.emit(message('error', 'Unexpected error in login'))
             return False
