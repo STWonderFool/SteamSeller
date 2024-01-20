@@ -1,4 +1,5 @@
 import os
+import pickle
 import re
 import sys
 from datetime import datetime, timedelta
@@ -130,8 +131,8 @@ def message(type_of_message, text):
     ready_text = f'<font color="{colors[type_of_message]}">{text}</font>'
     return ready_text
 
-def check_session(login, cookies):
-    response = get('https://steamcommunity.com/', cookies=cookies)
+def check_session(login, session):
+    response = session.get('https://steamcommunity.com/')
     if login in response.text:
         return True
     else:
@@ -206,7 +207,7 @@ class SteamSeller(QWidget):
         self.game_box.addItems(['CS', 'Dota', 'Rust', 'TF'])
         self.game_box.setFont(font)
         self.currency_box = QComboBox()
-        self.currency_box.addItems(['RUB', 'USD', 'EUR'])
+        self.currency_box.addItems(['RUB', 'USD', 'EUR', 'KZT'])
         self.currency_box.setFont(font)
 
         # Layout
@@ -326,7 +327,7 @@ class Seller(QThread):
         self.game = game.lower()
         self.game_id = game_ids[self.game]
 
-        currency_codes = {'RUB': '5', 'USD': '1', 'EUR': '3'}
+        currency_codes = {'RUB': '5', 'USD': '1', 'EUR': '3', 'KZT': '37'}
         self.currency_code = currency_codes[currency]
 
         # ItemsID
@@ -544,19 +545,19 @@ class Seller(QThread):
         return True
 
     def get_account_cookies(self):
-        with open('Sessions.json') as file:
-            sessions_file = load(file)
+        with open('Sessions.pickle', 'rb') as file:
+            sessions_file = pickle.load(file)
         if self.login in sessions_file and check_session(self.login, sessions_file[self.login]):
-            self.steam_cookies = sessions_file[self.login]
+            self.steam_cookies = utils.dict_from_cookiejar(sessions_file[self.login].cookies)
             utils.add_dict_to_cookiejar(self.session.cookies, self.steam_cookies)
             self.progress.emit(message('magic', 'Session is alive!'))
         else:
             if not self.login_to_account():
                 return False
-            with open('Sessions.json', 'w') as file:
+            with open('Sessions.pickle', 'wb') as file:
                 self.steam_cookies = utils.dict_from_cookiejar(self.session.cookies)
-                sessions_file[self.login] = self.steam_cookies
-                dump(sessions_file, file)
+                sessions_file[self.login] = self.session
+                pickle.dump(sessions_file, file)
 
         self.session_id = self.steam_cookies['sessionid']
         self.confirmation_executor = ConfirmationExecutor(self.identity_secret, self.steam_id, self.session)
