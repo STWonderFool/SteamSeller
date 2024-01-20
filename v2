@@ -548,8 +548,8 @@ class Seller(QThread):
         with open('Sessions.pickle', 'rb') as file:
             sessions_file = pickle.load(file)
         if self.login in sessions_file and check_session(self.login, sessions_file[self.login]):
+            self.session = sessions_file[self.login]
             self.steam_cookies = utils.dict_from_cookiejar(sessions_file[self.login].cookies)
-            utils.add_dict_to_cookiejar(self.session.cookies, self.steam_cookies)
             self.progress.emit(message('magic', 'Session is alive!'))
         else:
             if not self.login_to_account():
