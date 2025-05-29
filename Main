@@ -496,7 +496,7 @@ class Seller(QThread):
         return median_price * self.steam_coefficient
 
     def get_my_inventory(self):
-        url = f'https://steamcommunity.com/inventory/{self.steam_id}/{self.game_id}/2?l=english&count=5000'
+        url = f'https://steamcommunity.com/inventory/{self.steam_id}/{self.game_id}/2?l=english&count=2000'
 
         try:
             inventory = self.session.get(url).json()
@@ -515,22 +515,19 @@ class Seller(QThread):
             self.progress.emit(message('error', 'Error getting blacklist items'))
 
         inventory = {}
-        for item_assets in assets:
-            asset_id = item_assets['assetid']
-            class_id = item_assets['classid']
-            instance_id = item_assets['instanceid']
-            for item_desc in descriptions:
-                if class_id == item_desc['classid'] and instance_id == item_desc['instanceid']:
-                    if item_desc['marketable'] == 0:
-                        break
-                    item_name = item_desc['market_hash_name']
-                    if item_name in blacklist:
-                        break
+        for item_desc in descriptions:
+            if item_desc['marketable'] == 0:
+                break
 
-                    if item_name not in inventory:
-                        inventory[item_name] = [asset_id]
-                    else:
-                        inventory[item_name].append(asset_id)
+            item_name = item_desc['market_hash_name']
+            asset_id = item_desc['assetid']
+            if item_name in blacklist:
+                continue
+
+            if item_name not in inventory:
+                inventory[item_name] = [asset_id]
+            else:
+                inventory[item_name].append(asset_id)
         return inventory
 
     def login_to_account(self):
