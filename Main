@@ -515,19 +515,21 @@ class Seller(QThread):
             self.progress.emit(message('error', 'Error getting blacklist items'))
 
         inventory = {}
-        for item_desc in descriptions:
-            if item_desc['marketable'] == 0:
-                break
+        for asset in assets:
+            asset_id = asset['assetid']
+            for desc in descriptions:
+                if asset['classid'] == desc['classid'] and asset['instanceid'] == desc['instanceid']:
+                    item_name = desc['market_hash_name']
+                    if desc['marketable'] == 0:
+                        break
 
-            item_name = item_desc['market_hash_name']
-            asset_id = item_desc['assetid']
-            if item_name in blacklist:
-                continue
+                    if item_name in blacklist:
+                        break
 
-            if item_name not in inventory:
-                inventory[item_name] = [asset_id]
-            else:
-                inventory[item_name].append(asset_id)
+                    if item_name not in inventory:
+                        inventory[item_name] = [asset_id]
+                    else:
+                        inventory[item_name].append(asset_id)
         return inventory
 
     def login_to_account(self):
