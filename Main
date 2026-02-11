@@ -255,11 +255,17 @@ class SteamSeller(QWidget):
                 self.status.append(message('error', 'Bad mafile, need additional keys: account_password, proxy'))
                 return
             login, password, shared_secret, identity_secret, proxy, steam_id = response
-            if proxy:
+
+            # PROXY
+            if 'nop' in self.price_per_days_line_edit.text():
+                self.status.append(message('error', 'NOP'))
+                os.environ['https_proxy'] = ''
+            elif proxy:
                 os.environ['https_proxy'] = proxy
                 self.status.append(message('success', f'Working with {proxy} proxy'))
             else:
                 self.status.append(message('error', 'No proxy in mafile'))
+                os.environ['https_proxy'] = ''
 
             self.start_button.setText('Stop')
             self.start_button.setStyleSheet('background-color: rgb(153,50,204)')
@@ -321,6 +327,7 @@ class Seller(QThread):
         self.login, self.password, self.shared_secret, self.identity_secret, self.steam_id = \
             login, password, shared_secret, identity_secret, steam_id
 
+        price_per_days = price_per_days.split('nop')[0]
         self.price_per_days, self.steam_coefficient = float(price_per_days), float(steam_coefficient)
 
         game_ids = {'cs': '730', 'dota': '570', 'rust': '252490', 'tf': '440'}
@@ -412,7 +419,7 @@ class Seller(QThread):
     def get_item_id(self, item_name):
         url = f'https://steamcommunity.com/market/listings/{self.game_id}/' + quote(item_name)
         try:
-            response = get(url)
+            response = self.session.get(url)
             item_id = re.findall(r'Market_LoadOrderSpread\(\s(\d+)', response.text)[0]
             self.items_id[item_name] = item_id
             self.progress.emit(message('success', 'Got new item ID ^ ^'))
