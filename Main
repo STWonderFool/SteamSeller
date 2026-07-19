@@ -321,7 +321,7 @@ class Seller(QThread):
     def __init__(self, login, password, shared_secret, identity_secret, steam_id, price_per_days, steam_coefficient,
                  game, currency):
         super(Seller, self).__init__()
-        self.user_agent = get_user_agent_function()
+        self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
 
         # Account data
         self.login, self.password, self.shared_secret, self.identity_secret, self.steam_id = \
@@ -395,7 +395,8 @@ class Seller(QThread):
     def sell_in_steam(self, item_name, asset_id, sell_price):
         pure_sell_price = str(round((sell_price / 1.15) * 100))
         url = 'https://steamcommunity.com/market/sellitem/'
-        headers = {'Referer': f'https://steamcommunity.com/id/{self.steam_id}/inventory'}
+        headers = {'Referer': f'https://steamcommunity.com/id/{self.steam_id}/inventory',
+                   'User-Agent': self.user_agent}
         data = {
             'sessionid': self.session_id,
             'appid': self.game_id,
@@ -418,8 +419,29 @@ class Seller(QThread):
 
     def get_item_id(self, item_name):
         url = f'https://steamcommunity.com/market/listings/{self.game_id}/' + quote(item_name)
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control': 'max-age=0',
+            'Connection': 'keep-alive',
+            'Referer': 'https://steamcommunity.com/market/',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+            'sec-ch-ua': '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-viewport-height': '445',
+            'sec-ch-viewport-width': '1920',
+        }
+        cookies = {
+            'bMarketOptOut': '1'
+        }
         try:
-            response = self.session.get(url)
+            response = self.session.get(url, cookies=cookies, headers=headers)
             item_id = re.findall(r'Market_LoadOrderSpread\(\s(\d+)', response.text)[0]
             self.items_id[item_name] = item_id
             self.progress.emit(message('success', 'Got new item ID ^ ^'))
@@ -444,8 +466,22 @@ class Seller(QThread):
               f'{self.currency_code}&item_nameid=' + item_id
 
         headers = {
-            'Referer': quote(f'https://steamcommunity.com/market/listings/{self.game_id}/{item_name}'),
-            'User-Agent': self.user_agent
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'ru,ru-RU;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control': 'max-age=0',
+            'Connection': 'keep-alive',
+            'If-Modified-Since': 'Sun, 19 Jul 2026 11:07:50 GMT',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': self.user_agent,
+            'sec-ch-ua': '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-viewport-height': '441',
+            'sec-ch-viewport-width': '1920',
         }
 
         try:
@@ -470,8 +506,24 @@ class Seller(QThread):
     def get_median_price(self, item_name):
         url = f'https://steamcommunity.com/market/pricehistory/?country=RU&currency={self.currency_code}&appid=' \
               f'{self.game_id}&market_hash_name=' + quote(item_name)
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control': 'max-age=0',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': self.user_agent,
+            'sec-ch-ua': '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+        }
         try:
-            history = self.session.get(url).json()['prices']
+
+            history = self.session.get(url, headers=headers).json()['prices']
             if not history:
                 self.progress.emit(message('error', 'Steam error'))
                 return None
