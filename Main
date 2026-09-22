@@ -363,7 +363,7 @@ class Seller(QThread):
                 for asset_id in inventory[item_name]:
                     response = self.sell_in_steam(item_name, asset_id, sell_price)
                     need_to_confirm_counter += 1
-                    if need_to_confirm_counter >= 50:
+                    if need_to_confirm_counter >= 120:
                         self.progress.emit(message('magic', 'Confirming listings..'))
                         self.confirm_listings()
                         need_to_confirm_counter = 0
@@ -390,7 +390,9 @@ class Seller(QThread):
         try:
             self.confirmation_executor.allow_only_market_listings()
         except:
-            self.progress.emit(message('error', 'Error in confirming listings'))
+            self.progress.emit(message('error', 'Error in confirming listings, sleeping..'))
+            sleep(30)
+            return self.confirm_listings()
 
     def sell_in_steam(self, item_name, asset_id, sell_price):
         pure_sell_price = str(round((sell_price / 1.15) * 100))
