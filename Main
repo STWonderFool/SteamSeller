@@ -186,6 +186,9 @@ class SteamSeller(QWidget):
         self.steam_coefficient_label = QLabel('Steam coefficient')
         self.steam_coefficient_label.setAlignment(Qt.Qt.AlignCenter)
         self.steam_coefficient_label.setFont(font)
+        self.remove_listings_label = QLabel('Remove Listings')
+        self.remove_listings_label.setAlignment(Qt.Qt.AlignCenter)
+        self.remove_listings_label.setFont(font)
 
         # LineEdits
         self.price_per_days_line_edit = QLineEdit()
@@ -209,6 +212,9 @@ class SteamSeller(QWidget):
         self.currency_box = QComboBox()
         self.currency_box.addItems(['RUB', 'USD', 'EUR', 'KZT'])
         self.currency_box.setFont(font)
+        self.remove_listings_box = QComboBox()
+        self.remove_listings_box.addItems(['Yes', 'No'])
+        self.remove_listings_box.setFont(font)
 
         # Layout
         layout = QGridLayout()
@@ -227,7 +233,10 @@ class SteamSeller(QWidget):
         layout.addWidget(self.start_button, 2, 1, 1, 2)
         layout.addWidget(self.save_button, 2, 3, 1, 1)
 
-        layout.addWidget(self.status, 3, 0, 1, 4)
+        layout.addWidget(self.remove_listings_label, 3, 1, 1, 2)
+        layout.addWidget(self.remove_listings_box, 3, 3, 1, 1)
+
+        layout.addWidget(self.status, 4, 0, 1, 4)
         self.setLayout(layout)
 
         self.maFile_path = ''
@@ -274,7 +283,8 @@ class SteamSeller(QWidget):
                                  identity_secret=identity_secret, steam_id=steam_id,
                                  price_per_days=self.price_per_days_line_edit.text().strip(),
                                  steam_coefficient=self.steam_coefficient_line_edit.text().strip(),
-                                 game=self.game_box.currentText(), currency=self.currency_box.currentText())
+                                 game=self.game_box.currentText(), currency=self.currency_box.currentText(),
+                                 remove_listings=self.remove_listings_box.currentText())
             self.worker.progress.connect(lambda x: self.status.append(x))
             self.worker.finish.connect(self.stop_worker)
             self.worker.start()
@@ -319,7 +329,7 @@ class Seller(QThread):
     finish = pyqtSignal()
 
     def __init__(self, login, password, shared_secret, identity_secret, steam_id, price_per_days, steam_coefficient,
-                 game, currency):
+                 game, currency, remove_listings):
         super(Seller, self).__init__()
         self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
 
@@ -337,6 +347,8 @@ class Seller(QThread):
         currency_codes = {'RUB': '5', 'USD': '1', 'EUR': '3', 'KZT': '37'}
         self.currency_code = currency_codes[currency]
 
+        self.remove_listings = remove_listings
+
         # ItemsID
         with open('All Items ID.json') as file:
             self.all_items_id = load(file)
@@ -350,6 +362,10 @@ class Seller(QThread):
             if not self.get_account_cookies():
                 self.finish.emit()
                 return
+
+            if self.remove_listings == 'Yes':
+                self.remove_listings_function()
+
             inventory = self.get_my_inventory()
             if not inventory:
                 self.finish.emit()
@@ -385,6 +401,83 @@ class Seller(QThread):
 
         self.progress.emit(message('magic', 'Finish!'))
         self.finish.emit()
+
+    def remove_listings_function(self):
+        self.progress.emit(message('magic', 'Removing..'))
+
+        while True:
+            listings = self.get_listings()
+            if not listings:
+                self.progress.emit(message('magic', 'No more listings!'))
+                break
+            for listing_id in listings:
+                self.remove_single_listing(listing_id)
+
+    def remove_single_listing(self, listing_id):
+        headers = {
+            'Accept': '*/*',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive',
+            'Content-Type': 'application/json; charset=utf-8',
+            'Origin': 'https://steamcommunity.com',
+            'Referer': 'https://steamcommunity.com/market/activelistings',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36',
+            'sec-ch-ua': '"Chromium";v="158", "Not.A/Brand";v="24", "Google Chrome";v="158"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-viewport-height': '439',
+            'sec-ch-viewport-width': '1920',
+            'x-valve-request-type': 'mutationAction',
+        }
+        json_data = {
+            'm': 'CancelSellListing',
+            'mp': [
+                listing_id,
+            ],
+        }
+
+        try:
+            response = self.session.post('https://steamcommunity.com/market/actions', headers=headers, json=json_data)
+            if response.json()['data'] == 1:
+                self.progress.emit(message('success', 'Removed listing!'))
+            else:
+                self.progress.emit(message('error', 'Error in removing listing :('))
+        except:
+            pass
+
+    def get_listings(self, counter=0):
+        if counter == 3:
+            return False
+        counter += 1
+
+        headers = {
+            'Accept': '*/*',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive',
+            'Referer': 'https://steamcommunity.com/market/activelistings',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36',
+            'sec-ch-ua': '"Chromium";v="158", "Not.A/Brand";v="24", "Google Chrome";v="158"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-viewport-height': '371',
+            'sec-ch-viewport-width': '1920',
+            'x-valve-request-type': 'routeData',
+        }
+
+        try:
+            response = self.session.get('https://steamcommunity.com/market/activelistings', headers=headers)
+            listing_ids = re.findall(r'\\?"listingid\\?"\s*:\s*\\?"(\d+)\\?"', response.text)
+            return listing_ids
+        except:
+            self.progress.emit(message('error', 'Error getting listings'))
+            sleep(10)
+            self.get_listings(counter)
 
     def confirm_listings(self):
         try:
