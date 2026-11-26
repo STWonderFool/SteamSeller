@@ -148,6 +148,17 @@ def get_data_from_mafile(mafile_path):
     except:
         return 'error'
 
+def get_seller_price(buyer_price):
+    buyer_cents = round(buyer_price * 100)
+    for seller_cents in range(buyer_cents, 0, -1):
+        steam_fee = max(1, int(seller_cents * 0.05))
+        game_fee  = max(1, int(seller_cents * 0.10))
+        total = seller_cents + steam_fee + game_fee
+        if total <= buyer_cents:
+            return seller_cents
+
+    return False
+
 
 class Streamer(QThread):
     progress = pyqtSignal(str)
@@ -213,7 +224,7 @@ class SteamSeller(QWidget):
         self.currency_box.addItems(['RUB', 'USD', 'EUR', 'KZT'])
         self.currency_box.setFont(font)
         self.remove_listings_box = QComboBox()
-        self.remove_listings_box.addItems(['Yes', 'No'])
+        self.remove_listings_box.addItems(['Yes', 'No', 'Delist Only'])
         self.remove_listings_box.setFont(font)
 
         # Layout
@@ -349,11 +360,6 @@ class Seller(QThread):
 
         self.remove_listings = remove_listings
 
-        # ItemsID
-        with open('All Items ID.json') as file:
-            self.all_items_id = load(file)
-            self.items_id = self.all_items_id[self.game]
-
         self.session = Session()
 
     def run(self):
@@ -363,7 +369,11 @@ class Seller(QThread):
                 self.finish.emit()
                 return
 
-            if self.remove_listings == 'Yes':
+            if self.remove_listings == 'Delist Only':
+                self.remove_listings_function()
+                self.finish.emit()
+                return
+            elif self.remove_listings == 'Yes':
                 self.remove_listings_function()
 
             inventory = self.get_my_inventory()
@@ -394,10 +404,6 @@ class Seller(QThread):
 
         except:
             print(format_exc())
-
-        with open('All Items ID.json', 'w') as file:
-            self.all_items_id[self.game] = self.items_id
-            dump(self.all_items_id, file)
 
         self.progress.emit(message('magic', 'Finish!'))
         self.finish.emit()
@@ -488,7 +494,11 @@ class Seller(QThread):
             return self.confirm_listings()
 
     def sell_in_steam(self, item_name, asset_id, sell_price):
-        pure_sell_price = str(round((sell_price / 1.15) * 100))
+        pure_sell_price = get_seller_price(sell_price)
+        if not pure_sell_price:
+            self.progress.emit(message('error', f'NO PURE PRICE FOR {item_name}'))
+            return 
+
         url = 'https://steamcommunity.com/market/sellitem/'
         headers = {'Referer': f'https://steamcommunity.com/id/{self.steam_id}/inventory',
                    'User-Agent': self.user_agent}
@@ -512,82 +522,45 @@ class Seller(QThread):
         except:
             self.progress.emit(message('error', f'Error listing {item_name}'))
 
-    def get_item_id(self, item_name):
-        url = f'https://steamcommunity.com/market/listings/{self.game_id}/' + quote(item_name)
-        headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cache-Control': 'max-age=0',
-            'Connection': 'keep-alive',
-            'Referer': 'https://steamcommunity.com/market/',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
-            'sec-ch-ua': '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-ch-viewport-height': '445',
-            'sec-ch-viewport-width': '1920',
-        }
-        cookies = {
-            'bMarketOptOut': '1'
-        }
-        try:
-            response = self.session.get(url, cookies=cookies, headers=headers)
-            item_id = re.findall(r'Market_LoadOrderSpread\(\s(\d+)', response.text)[0]
-            self.items_id[item_name] = item_id
-            self.progress.emit(message('success', 'Got new item ID ^ ^'))
-            return item_id
-        except:
-            self.progress.emit(message('error', 'Error getting new item ID'))
-            return None
-
     def get_sell_price(self, item_name):
         median_price = self.get_median_price(item_name)
         if median_price is None:
             return None
 
-        if item_name in self.items_id:
-            item_id = self.items_id[item_name]
-        else:
-            item_id = self.get_item_id(item_name)
-            if item_id is None:
-                return None
-
-        url = f'https://steamcommunity.com/market/itemordershistogram?country=RU&language=english&currency=' \
-              f'{self.currency_code}&item_nameid=' + item_id
-
         headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'ru,ru-RU;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cache-Control': 'max-age=0',
+            'Accept': '*/*',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
             'Connection': 'keep-alive',
-            'If-Modified-Since': 'Sun, 19 Jul 2026 11:07:50 GMT',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1',
-            'User-Agent': self.user_agent,
-            'sec-ch-ua': '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+            'Content-Type': 'application/json; charset=utf-8',
+            'If-None-Match': '"82515e6475adbc0a84d6a9f30c5eef99"',
+            'Referer': 'https://steamcommunity.com/market/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36',
+            'X-Requested-With': 'XMLHttpRequest',
+            'sec-ch-ua': '"Chromium";v="158", "Not.A/Brand";v="24", "Google Chrome";v="158"',
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"Windows"',
-            'sec-ch-viewport-height': '441',
+            'sec-ch-viewport-height': '365',
             'sec-ch-viewport-width': '1920',
+            'x-valve-request-type': 'queryAction',
         }
+        params = {
+            'q': 'Load',
+            'qp': f'[{self.game_id},"{item_name}"]',
+        }
+        url = 'https://steamcommunity.com/market/orderbook'
 
         try:
-            sell_orders = self.session.get(url, headers=headers).json()['sell_order_graph']
+            response = self.session.get(url, headers=headers, params=params)
+            buy_non_filtered = response.json()["data"]["data"]["rgCompactBuyOrders"][::2]
+            buy_order_graph_prices = [round(p / 100, 2) for p in buy_non_filtered]
+            sell_non_filtered = response.json()["data"]["data"]["rgCompactSellOrders"][::2]
+            sell_order_graph_prices = [round(p / 100, 2) for p in sell_non_filtered]
         except:
             self.progress.emit(message('error', 'Error getting steam price'))
             return None
-
-        sell_order_graph_prices = []
-        for i in sell_orders:
-            sell_order_graph_prices.append(i[0])
 
         sell_price = None
         for i in sell_order_graph_prices:
@@ -617,7 +590,6 @@ class Seller(QThread):
             'sec-ch-ua-platform': '"Windows"',
         }
         try:
-
             history = self.session.get(url, headers=headers).json()['prices']
             if not history:
                 self.progress.emit(message('error', 'Steam error'))
