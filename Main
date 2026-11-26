@@ -226,6 +226,9 @@ class SteamSeller(QWidget):
         self.remove_listings_box = QComboBox()
         self.remove_listings_box.addItems(['Yes', 'No', 'Delist Only'])
         self.remove_listings_box.setFont(font)
+        self.outbid_box = QComboBox()
+        self.outbid_box.addItems(['Не перебивать', 'Перебить на копейку'])
+        self.outbid_box.setFont(font)
 
         # Layout
         layout = QGridLayout()
@@ -244,6 +247,7 @@ class SteamSeller(QWidget):
         layout.addWidget(self.start_button, 2, 1, 1, 2)
         layout.addWidget(self.save_button, 2, 3, 1, 1)
 
+        layout.addWidget(self.outbid_box, 3, 0, 1, 1)
         layout.addWidget(self.remove_listings_label, 3, 1, 1, 2)
         layout.addWidget(self.remove_listings_box, 3, 3, 1, 1)
 
@@ -295,7 +299,7 @@ class SteamSeller(QWidget):
                                  price_per_days=self.price_per_days_line_edit.text().strip(),
                                  steam_coefficient=self.steam_coefficient_line_edit.text().strip(),
                                  game=self.game_box.currentText(), currency=self.currency_box.currentText(),
-                                 remove_listings=self.remove_listings_box.currentText())
+                                 remove_listings=self.remove_listings_box.currentText(), outbid=self.outbid_box.currentText())
             self.worker.progress.connect(lambda x: self.status.append(x))
             self.worker.finish.connect(self.stop_worker)
             self.worker.start()
@@ -316,7 +320,8 @@ class SteamSeller(QWidget):
             data = {'price_per_days': self.price_per_days_line_edit.text().strip(),
                     'steam_coefficient': self.steam_coefficient_line_edit.text().strip(),
                     'maFile_path': self.maFile_path, 'game': self.game_box.currentText(),
-                    'currency': self.currency_box.currentText()}
+                    'currency': self.currency_box.currentText(), 'outbid': self.outbid_box.currentText(),
+                    'remove_listings': self.remove_listings_box.currentText()}
             dump(data, file)
         self.status.append(message('success', 'User data saved!'))
 
@@ -330,6 +335,8 @@ class SteamSeller(QWidget):
                 self.maFile_label.setText(Path(self.maFile_path).resolve().name)
                 self.game_box.setCurrentText(data['game'])
                 self.currency_box.setCurrentText(data['currency'])
+                self.outbid_box.setCurrentText(data['outbid'])
+                self.remove_listings_box.setCurrentText(data['remove_listings'])
                 self.status.append(message('success', 'User data loaded'))
         except:
             self.status.append(message('error', 'No user data'))
@@ -340,7 +347,7 @@ class Seller(QThread):
     finish = pyqtSignal()
 
     def __init__(self, login, password, shared_secret, identity_secret, steam_id, price_per_days, steam_coefficient,
-                 game, currency, remove_listings):
+                 game, currency, remove_listings, outbid):
         super(Seller, self).__init__()
         self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
 
@@ -359,6 +366,10 @@ class Seller(QThread):
         self.currency_code = currency_codes[currency]
 
         self.remove_listings = remove_listings
+        if outbid == 'Не перебивать':
+            self.outbid = False
+        else:
+            self.outbid = True
 
         self.session = Session()
 
@@ -497,7 +508,7 @@ class Seller(QThread):
         pure_sell_price = get_seller_price(sell_price)
         if not pure_sell_price:
             self.progress.emit(message('error', f'NO PURE PRICE FOR {item_name}'))
-            return 
+            return
 
         url = 'https://steamcommunity.com/market/sellitem/'
         headers = {'Referer': f'https://steamcommunity.com/id/{self.steam_id}/inventory',
@@ -569,6 +580,9 @@ class Seller(QThread):
                 break
         if sell_price is None:
             self.progress.emit(message('error', f'Cant get sell price of {item_name}'))
+
+        if self.outbid:
+            sell_price -= 0.01
         return sell_price
 
     def get_median_price(self, item_name):
